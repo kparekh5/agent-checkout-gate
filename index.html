@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agent Checkout Gate — a small demo</title>
+<meta name="description" content="A tiny demo of a human-confirmation gate for AI-agent checkout flows, built after reading Stripe's post on designing Checkout for AI agents." />
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #12161f;
+    --panel-2: #171c27;
+    --border: #232a38;
+    --text: #e7ebf3;
+    --text-dim: #8b93a7;
+    --accent: #6ee7b7;
+    --accent-2: #7dd3fc;
+    --danger: #fca5a5;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 600px at 20% -10%, #16324a22, transparent),
+                var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+  header {
+    padding: 2.5rem 1.5rem 1.5rem;
+    max-width: 980px;
+    margin: 0 auto;
+  }
+  header h1 {
+    font-size: clamp(1.5rem, 1.1rem + 1.5vw, 2.1rem);
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.02em;
+  }
+  header p {
+    color: var(--text-dim);
+    line-height: 1.6;
+    max-width: 62ch;
+    margin: 0 0 0.4rem;
+  }
+  header a { color: var(--accent-2); }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--accent);
+    background: #6ee7b71a;
+    border: 1px solid #6ee7b73a;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    margin-bottom: 1rem;
+  }
+  main {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 0 1.5rem 3rem;
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 1.25rem;
+  }
+  @media (max-width: 800px) {
+    main { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-head {
+    padding: 0.9rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #chat {
+    padding: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    min-height: 340px;
+  }
+  .msg {
+    max-width: 85%;
+    padding: 0.6rem 0.85rem;
+    border-radius: 10px;
+    line-height: 1.45;
+    font-size: 0.92rem;
+    opacity: 0;
+    transform: translateY(6px);
+    animation: rise 0.35s ease forwards;
+  }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+  .msg.user {
+    align-self: flex-end;
+    background: #1e2937;
+    border: 1px solid #2b3648;
+  }
+  .msg.agent {
+    align-self: flex-start;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+  }
+  .msg .who {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  #log {
+    padding: 1.1rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    min-height: 340px;
+    overflow-x: auto;
+  }
+  .call {
+    margin-bottom: 0.9rem;
+    opacity: 0;
+    transform: translateY(6px);
+    animation: rise 0.35s ease forwards;
+  }
+  .call .name { color: var(--accent-2); }
+  .call .gate { color: var(--danger); font-weight: 600; }
+  .call .ok { color: var(--accent); font-weight: 600; }
+  .call pre {
+    margin: 0.35rem 0 0;
+    color: var(--text-dim);
+    white-space: pre-wrap;
+  }
+  #gate {
+    margin: 1.1rem;
+    padding: 1rem;
+    border-radius: 10px;
+    border: 1px solid #fca5a53a;
+    background: #fca5a512;
+    display: none;
+  }
+  #gate.show { display: block; }
+  #gate p { margin: 0 0 0.7rem; font-size: 0.9rem; }
+  #gate .amt { font-size: 1.3rem; font-weight: 700; }
+  #gate button {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 0.55rem 1rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+  #gate .approve {
+    background: var(--accent);
+    color: #06281c;
+    margin-right: 0.5rem;
+  }
+  #gate .deny {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-dim);
+  }
+  footer {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 0 1.5rem 3rem;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    line-height: 1.7;
+  }
+  footer a { color: var(--accent-2); }
+  #replay {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 8px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  #replay:hover { color: var(--text); border-color: var(--accent-2); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="badge">● small demo, not a Stripe product</div>
+  <h1>Agent Checkout Gate</h1>
+  <p>
+    Stripe's post on <a href="https://stripe.dev/blog/how-stripe-is-designing-checkout-for-ai-agents" target="_blank" rel="noopener">designing Checkout for AI agents</a>
+    describes tools like <code>select_payment_method</code> and <code>submit_payment</code>
+    that only get revealed to an agent once checkout state actually allows them, so it's
+    never guessing at options that don't apply yet. That part I loved. It also left me
+    wondering about the moment right after <code>submit_payment</code> becomes available:
+    should firing it also require an explicit human OK, not just eligibility? This is a
+    small, self-contained simulation of that one extra gate.
+  </p>
+  <p>No real payments, no real API calls, no backend. Everything below runs client-side.</p>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="panel-head">
+      <span>Conversation</span>
+      <button id="replay">Replay ↻</button>
+    </div>
+    <div id="chat"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><span>Agent tool calls</span></div>
+    <div id="log"></div>
+    <div id="gate">
+      <p>The agent is requesting to finalize a charge:</p>
+      <p class="amt">$128.00 → Acme Audio</p>
+      <p style="color:var(--text-dim); font-size:0.82rem;">
+        submit_payment() is eligible, but blocked until a human explicitly approves it.
+      </p>
+      <button class="approve" id="approveBtn">Approve charge</button>
+      <button class="deny" id="denyBtn">Deny</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Built by <a href="https://kavyaparekh.github.io" target="_blank" rel="noopener">Kavya Parekh</a>
+  after reading Stripe's Checkout-for-AI-agents post. The pattern here mirrors the
+  self-correction / validation loop in
+  <a href="https://github.com/kavyaparekh/QueryMind" target="_blank" rel="noopener">QueryMind</a>,
+  a natural-language-to-SQL agent that exposes tools via MCP and refuses to execute a
+  write it can't validate first. Source:
+  <a href="https://github.com/kparekh5/agent-checkout-gate" target="_blank" rel="noopener">github.com/kparekh5/agent-checkout-gate</a>.
+</footer>
+
+<script>
+const chat = document.getElementById('chat');
+const log = document.getElementById('log');
+const gate = document.getElementById('gate');
+const approveBtn = document.getElementById('approveBtn');
+const denyBtn = document.getElementById('denyBtn');
+const replayBtn = document.getElementById('replay');
+
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function addMsg(who, text) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + (who === 'You' ? 'user' : 'agent');
+  el.innerHTML = '<div class="who">' + who + '</div>' + text;
+  chat.appendChild(el);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function addCall(name, args, status) {
+  const el = document.createElement('div');
+  el.className = 'call';
+  const statusHtml = status === 'gate'
+    ? '<span class="gate"> ⏸ waiting for human approval</span>'
+    : status === 'ok'
+      ? '<span class="ok"> ✓ ok</span>'
+      : '';
+  el.innerHTML = '<span class="name">' + name + '(</span>...<span class="name">)</span>' + statusHtml +
+    '<pre>' + JSON.stringify(args, null, 2) + '</pre>';
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+
+let resolveGate = null;
+approveBtn.onclick = () => { if (resolveGate) { resolveGate(true); resolveGate = null; } };
+denyBtn.onclick = () => { if (resolveGate) { resolveGate(false); resolveGate = null; } };
+
+async function runDemo() {
+  chat.innerHTML = '';
+  log.innerHTML = '';
+  gate.classList.remove('show');
+
+  await wait(300);
+  addMsg('You', 'Find me noise-cancelling headphones under $150 and buy the best one.');
+
+  await wait(700);
+  addMsg('Agent', "On it. I'll search, pick the best match, then confirm the purchase with you before paying.");
+
+  await wait(600);
+  addCall('list_products', { query: 'noise-cancelling headphones', max_price: 150 }, 'ok');
+
+  await wait(700);
+  addCall('get_price', { product_id: 'acme-qc-42' }, 'ok');
+
+  await wait(700);
+  addMsg('Agent', 'Found "Acme QC-42" at $128.00, in stock, 4.6★. Ready to check out whenever you approve.');
+
+  await wait(700);
+  const callEl = addCall('submit_payment', { product_id: 'acme-qc-42', amount: '128.00', currency: 'usd' }, 'gate');
+  gate.classList.add('show');
+
+  const approved = await new Promise(res => { resolveGate = res; });
+
+  if (approved) {
+    callEl.querySelector('.gate')?.remove();
+    const okSpan = document.createElement('span');
+    okSpan.className = 'ok';
+    okSpan.textContent = ' ✓ approved by human, charge completed';
+    callEl.insertBefore(okSpan, callEl.querySelector('pre'));
+    await wait(200);
+    addMsg('Agent', 'Done, charged $128.00 to Acme Audio. Order confirmation would go to your email.');
+  } else {
+    callEl.querySelector('.gate')?.remove();
+    const noSpan = document.createElement('span');
+    noSpan.className = 'gate';
+    noSpan.textContent = ' ✕ denied by human, charge cancelled';
+    callEl.insertBefore(noSpan, callEl.querySelector('pre'));
+    await wait(200);
+    addMsg('Agent', 'Understood, I cancelled the charge. No money moved.');
+  }
+  gate.classList.remove('show');
+}
+
+replayBtn.onclick = runDemo;
+runDemo();
+</script>
+
+</body>
+</html>
